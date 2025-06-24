@@ -1,0 +1,15 @@
+{
+  "name": "hyncica/rabbitmq-playground-producer",
+  "description": "description",
+  "minimum-stability": "dev",
+  "license": "MIT",
+  "authors": [
+    {
+      "name": "michal",
+      "email": "michal@hyncica.eu"
+    }
+  ],
+  "require": {
+    "php-amqplib/php-amqplib": "^3.7"
+  }
+}

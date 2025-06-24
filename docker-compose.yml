@@ -1,0 +1,33 @@
+services:
+  rabbit:
+    image: rabbitmq:4-management
+    hostname: rabbit
+    ports:
+      - '8080:15672'
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:15672" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+  producer:
+    build:
+      context: docker/producer
+      dockerfile: Dockerfile
+    ports:
+    - '8050:80'
+    volumes:
+      - ./producer:/var/www/html:delegate
+    depends_on:
+      - rabbit
+    restart: on-failure
+  consumer:
+    build:
+      context: docker/consumer
+      dockerfile: Dockerfile
+    volumes:
+      - ./consumer:/app:delegate
+    env_file:
+      - .env
+    depends_on:
+      - rabbit
+    restart: on-failure
