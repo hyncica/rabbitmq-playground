@@ -1,0 +1,7 @@
+instances:
+  - name: "main"
+    dns:
+      - "elasticsearch"
+      - "localhost"
+    filename: "elasticsearch"
+      

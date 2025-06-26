@@ -4,6 +4,9 @@ services:
     hostname: rabbit
     ports:
       - '8080:15672'
+    environment:
+      LOG_EXCHANGE: true
+      LOG_EXCHANGE_LEVEL: debug
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:15672" ]
       interval: 30s
@@ -31,3 +34,89 @@ services:
     depends_on:
       - rabbit
     restart: on-failure
+  logstash:
+    build:
+      context: . 
+      dockerfile: docker/logstash/Dockerfile
+    ports:
+      - 9600:9600
+    volumes:
+      - logstash_data:/usr/share/logstash/data
+      - elk_certs:/usr/share/logstash/config/certs
+    env_file:
+      - .env
+    environment:
+      xpack.security.enabled: true
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+      kibana:
+        condition: service_healthy
+  elasticsearch:
+    build:
+      context: .
+      dockerfile: docker/elastic/Dockerfile
+    ports:
+      - 9200:9200
+      - 9300:9300
+    volumes:
+      - elk_certs:/usr/share/elasticsearch/config/certs
+      - elastic_data:/usr/share/elasticsearch/data
+    env_file:
+      - .env
+    environment:
+      ELASTIC_PASSWORD: ${ELASTICSEARCH_PASSWORD}
+      node.name: elasticsearch
+      discovery.type: single-node
+      xpack.security.http.ssl.enabled: true
+      xpack.security.http.ssl.key: /usr/share/elasticsearch/config/certs/elasticsearch/elasticsearch.key
+      xpack.security.http.ssl.certificate: /usr/share/elasticsearch/config/certs/elasticsearch/elasticsearch.crt
+      xpack.security.http.ssl.certificate_authorities: /usr/share/elasticsearch/config/certs/ca/ca.crt
+      xpack.security.transport.ssl.enabled: true
+      xpack.security.transport.ssl.key: /usr/share/elasticsearch/config/certs/elasticsearch/elasticsearch.key
+      xpack.security.transport.ssl.certificate: /usr/share/elasticsearch/config/certs/elasticsearch/elasticsearch.crt
+      xpack.security.transport.ssl.certificate_authorities: /usr/share/elasticsearch/config/certs/ca/ca.crt
+      xpack.security.transport.ssl.verification_mode: certificate
+    healthcheck:
+      test: ["CMD-SHELL", "[ -f config/certs/elasticsearch/elasticsearch.crt ]"]
+      interval: 1s
+      timeout: 5s
+      retries: 120
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.17.3
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    ports:
+      - 5601:5601
+    volumes:
+      - elk_certs:/usr/share/kibana/config/certs
+      - kibana_data:/usr/share/kibana/data
+    env_file:
+      - .env
+    environment:
+      ELASTICSEARCH_HOSTS: https://elasticsearch:9200
+      ELASTICSEARCH_USERNAME: kibana_system
+      ELASTICSEARCH_PASSWORD: ${KIBANA_PASSWORD} 
+      ELASTICSEARCH_SSL_CERTIFICATEAUTHORITIES: config/certs/ca/ca.crt
+    healthcheck:
+     test:
+       [
+         "CMD-SHELL",
+         "curl -s -I http://localhost:5601 | grep -q 'HTTP/1.1 302 Found'",
+       ]
+     interval: 10s
+     timeout: 10s
+     retries: 120
+    command: > 
+      bash -c '
+       until curl -s -X POST --cacert config/certs/ca/ca.crt -u "${ELASTICSEARCH_USERNAME}:${ELASTICSEARCH_PASSWORD}" -H "Content-Type: application/json" https://elasticsearch:9200/_security/user/kibana_system/_password -d "{\"password\":\"${KIBANA_PASSWORD}\"}" | grep -q "^{}"; do sleep 10; done;
+       /bin/tini -- /usr/local/bin/kibana-docker
+      '
+
+volumes:
+  elk_certs:
+  elastic_data:
+  logstash_data:
+  kibana_data:
+
