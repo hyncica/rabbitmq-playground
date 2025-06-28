@@ -1,6 +1,10 @@
 # rabbitmq-playground
 Repository to play, test and learn to work with RabbitMQ
 
+## Branches
+- **master** - main branch, contains simplest version of playground. RabbitMQ is running in default configuration.
+- **ELK** - adds ELK stack for better monitoring of what's happening in RabbitMQ. By [VencaH](https://github.com/VencaH), thanks. 
+
 ## Content
 This repository contains a docker compose definition with three services
 1. RabbitMQ service based on rabbitmq:4-management image
