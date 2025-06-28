@@ -1,6 +1,5 @@
 services:
   rabbit:
-    # image: rabbitmq:4-management
     build:
       context: docker/rabbitmq
       dockerfile: Dockerfile
@@ -8,7 +7,6 @@ services:
     ports:
       - '8080:15672'
     healthcheck:
-      # test: [ "CMD", "curl", "-f", "http://localhost:15672" ]
       test: rabbitmq-diagnostics check_port_connectivity
       interval: 30s
       start_period: 40s 
@@ -43,11 +41,9 @@ services:
     build:
       context: . 
       dockerfile: docker/logstash/Dockerfile
-    ports:
-      - 9600:9600
     volumes:
-      - logstash_data:/usr/share/logstash/data
-      - elk_certs:/usr/share/logstash/config/certs
+      - logstash_data:/usr/share/logstash/data:rw
+      - elk_certs:/usr/share/logstash/config/certs:ro
     env_file:
       - .env
     environment:
@@ -57,18 +53,13 @@ services:
         condition: service_healthy
       elasticsearch:
         condition: service_healthy
-      kibana:
-        condition: service_healthy
   elasticsearch:
     build:
       context: .
       dockerfile: docker/elastic/Dockerfile
-    ports:
-      - 9200:9200
-      - 9300:9300
     volumes:
-      - elk_certs:/usr/share/elasticsearch/config/certs
-      - elastic_data:/usr/share/elasticsearch/data
+      - elk_certs:/usr/share/elasticsearch/config/certs:rw
+      - elastic_data:/usr/share/elasticsearch/data:rw
     env_file:
       - .env
     environment:
@@ -85,21 +76,24 @@ services:
       xpack.security.transport.ssl.certificate_authorities: /usr/share/elasticsearch/config/certs/ca/ca.crt
       xpack.security.transport.ssl.verification_mode: certificate
     healthcheck:
-      test: ["CMD-SHELL", "[ -f config/certs/elasticsearch/elasticsearch.crt ]"]
-      start_period: 30s 
-      start_interval: 1s
+      test: >
+        bash -c 'curl -f --cacert config/certs/ca/ca.crt -u "elastic:elastic" https://localhost:9200/ || exit 1'
+      start_period: 40s 
+      start_interval: 5s
       interval: 30s
       timeout: 5s
-      retries: 120
+      retries: 5
   kibana:
     image: docker.elastic.co/kibana/kibana:8.17.3
     depends_on:
       elasticsearch:
         condition: service_healthy
+      kibana-sysuser-pwd-change:
+        condition: service_completed_successfully
     ports:
       - 5601:5601
     volumes:
-      - elk_certs:/usr/share/kibana/config/certs
+      - elk_certs:/usr/share/kibana/config/certs:ro
       - kibana_data:/usr/share/kibana/data
     env_file:
       - .env
@@ -118,12 +112,21 @@ services:
      start_interval: 10s
      interval: 30s
      timeout: 10s
-     retries: 120
-    command: > 
-      bash -c '
-       until curl -s -X POST --cacert config/certs/ca/ca.crt -u "${ELASTICSEARCH_USERNAME}:${ELASTICSEARCH_PASSWORD}" -H "Content-Type: application/json" https://elasticsearch:9200/_security/user/kibana_system/_password -d "{\"password\":\"${KIBANA_PASSWORD}\"}" | grep -q "^{}"; do sleep 10; done;
-       /bin/tini -- /usr/local/bin/kibana-docker
-      '
+     retries: 5
+  kibana-sysuser-pwd-change:
+    build:
+      context: docker/kibana-sysuser-pwd-change
+      dockerfile: Dockerfile
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    volumes:
+      - elk_certs:/home/curl_user/config/certs:ro
+    env_file:
+      - .env
+    environment:
+      ELASTICSEARCH_PASSWORD: ${ELASTICSEARCH_PASSWORD}
+      KIBANA_PASSWORD: ${KIBANA_PASSWORD}
 
 volumes:
   elk_certs:

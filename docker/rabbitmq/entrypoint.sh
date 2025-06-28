@@ -3,7 +3,8 @@
 sleep 10
 (docker-entrypoint.sh rabbitmq-server) &
 echo "Waiting for rabbitmq to start."
-until rabbitmq-diagnostics -q ping; do 
+      
+until rabbitmq-diagnostics check_port_connectivity; do 
     sleep 2
 done
 
