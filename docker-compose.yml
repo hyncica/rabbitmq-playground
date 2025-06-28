@@ -1,12 +1,16 @@
 services:
   rabbit:
-    image: rabbitmq:4-management
+    build:
+      context: docker/rabbitmq
+      dockerfile: Dockerfile
     hostname: rabbit
     ports:
       - '8080:15672'
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:15672" ]
+      test: rabbitmq-diagnostics check_port_connectivity
       interval: 30s
+      start_period: 40s 
+      start_interval: 5s
       timeout: 10s
       retries: 5
   producer:
@@ -18,7 +22,8 @@ services:
     volumes:
       - ./producer:/var/www/html:delegate
     depends_on:
-      - rabbit
+      rabbit:
+        condition: service_healthy
     restart: on-failure
   consumer:
     build:
@@ -29,5 +34,103 @@ services:
     env_file:
       - .env
     depends_on:
-      - rabbit
+      rabbit:
+        condition: service_healthy
     restart: on-failure
+  logstash:
+    build:
+      context: . 
+      dockerfile: docker/logstash/Dockerfile
+    volumes:
+      - logstash_data:/usr/share/logstash/data:rw
+      - elk_certs:/usr/share/logstash/config/certs:ro
+    env_file:
+      - .env
+    environment:
+      xpack.security.enabled: true
+    depends_on:
+      rabbit:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+  elasticsearch:
+    build:
+      context: .
+      dockerfile: docker/elastic/Dockerfile
+    volumes:
+      - elk_certs:/usr/share/elasticsearch/config/certs:rw
+      - elastic_data:/usr/share/elasticsearch/data:rw
+    env_file:
+      - .env
+    environment:
+      ELASTIC_PASSWORD: ${ELASTICSEARCH_PASSWORD}
+      node.name: elasticsearch
+      discovery.type: single-node
+      xpack.security.http.ssl.enabled: true
+      xpack.security.http.ssl.key: /usr/share/elasticsearch/config/certs/elasticsearch/elasticsearch.key
+      xpack.security.http.ssl.certificate: /usr/share/elasticsearch/config/certs/elasticsearch/elasticsearch.crt
+      xpack.security.http.ssl.certificate_authorities: /usr/share/elasticsearch/config/certs/ca/ca.crt
+      xpack.security.transport.ssl.enabled: true
+      xpack.security.transport.ssl.key: /usr/share/elasticsearch/config/certs/elasticsearch/elasticsearch.key
+      xpack.security.transport.ssl.certificate: /usr/share/elasticsearch/config/certs/elasticsearch/elasticsearch.crt
+      xpack.security.transport.ssl.certificate_authorities: /usr/share/elasticsearch/config/certs/ca/ca.crt
+      xpack.security.transport.ssl.verification_mode: certificate
+    healthcheck:
+      test: >
+        bash -c 'curl -f --cacert config/certs/ca/ca.crt -u "elastic:elastic" https://localhost:9200/ || exit 1'
+      start_period: 40s 
+      start_interval: 5s
+      interval: 30s
+      timeout: 5s
+      retries: 5
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.17.3
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+      kibana-sysuser-pwd-change:
+        condition: service_completed_successfully
+    ports:
+      - 5601:5601
+    volumes:
+      - elk_certs:/usr/share/kibana/config/certs:ro
+      - kibana_data:/usr/share/kibana/data
+    env_file:
+      - .env
+    environment:
+      ELASTICSEARCH_HOSTS: https://elasticsearch:9200
+      ELASTICSEARCH_USERNAME: kibana_system
+      ELASTICSEARCH_PASSWORD: ${KIBANA_PASSWORD} 
+      ELASTICSEARCH_SSL_CERTIFICATEAUTHORITIES: config/certs/ca/ca.crt
+    healthcheck:
+     test:
+       [
+         "CMD-SHELL",
+         "curl -s -I http://localhost:5601 | grep -q 'HTTP/1.1 302 Found'",
+       ]
+     start_period: 40s 
+     start_interval: 10s
+     interval: 30s
+     timeout: 10s
+     retries: 5
+  kibana-sysuser-pwd-change:
+    build:
+      context: docker/kibana-sysuser-pwd-change
+      dockerfile: Dockerfile
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    volumes:
+      - elk_certs:/home/curl_user/config/certs:ro
+    env_file:
+      - .env
+    environment:
+      ELASTICSEARCH_PASSWORD: ${ELASTICSEARCH_PASSWORD}
+      KIBANA_PASSWORD: ${KIBANA_PASSWORD}
+
+volumes:
+  elk_certs:
+  elastic_data:
+  logstash_data:
+  kibana_data:
+

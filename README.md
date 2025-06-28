@@ -2,10 +2,14 @@
 Repository to play, test and learn to work with RabbitMQ
 
 ## Content
-This repository contains a docker compose definition with three services
+This repository contains a docker compose definition with following services
 1. RabbitMQ service based on rabbitmq:4-management image
 2. Producer service based on php:8.3-apache image
-3. Consumer service based on php:8.3-cli
+3. Consumer service based on php:8.3-cli image
+4. Logstash service based on logstash:8.17.3 image
+5. Elasticsearch service based on elasticsearch:8.17.3 image
+6. Kibana service base on kibana:8.17.3 image
+7. Kibana-sysuser-pwd-change serivice based on curl:latest image
 
 ### Producer service
 Produce service contains a simple HTML form for entering name and amount. 
@@ -15,6 +19,11 @@ to RabbitMQ.
 ### Consumer service
 Upon receiving a message from the RabbitMQ service, the consumer service will update
 Google Spreadsheet using API.
+
+### Kibana-sysuser-pwd-change service
+First start of Kibana require change in elastic kibana system user "kibana_system". 
+To automate this, a side car service is defined. This service set up the password to value
+in env variable `KIBANA_PASSWORD` using the elastic API endpoint.
 
 ## Prerequisites
 1. Docker
@@ -28,8 +37,10 @@ Google Spreadsheet using API.
 ```shell
 docker compose up -d
 ```
+4. (Optional) Import default dashboard and related objects from kibana/export.ndjson.
 To access producer web application access http://localhost:8050,
-to access rabbitMQ management access http://localhost:8080
+to access rabbitMQ management access http://localhost:8080,
+to access Kibana web application access http://localhost:5601.
 
 ## Config variables in .env file
 - `GOOGLE_APPLICATION_CREDENTIALS` variable contains a path to google credential file. 
@@ -37,4 +48,6 @@ The `consumer` folder is mounted to `/app` folder in container so `consumer/cred
 in container.
 - `GOOGLE_SPREADSHEET_ID` variable contains ID of spreadsheet. You can find spreadsheet's ID in URL while editing
 the file. The Google spreadsheet URL looks like https://docs.google.com/spreadsheets/d/<SPREADSHEET_ID>/edit?gid=0#gid=0 
-- `GOOGLE_LIST_NAME` variable contains the name of list that consumer service should update. 
+- `GOOGLE_LIST_NAME` variable contains the name of list that consumer service should update.
+- `ELASTICSEARCH_PASSWORD` variable contains password for the default user for Elastic, also used by services (Logstash, Kibana).
+- `KIBANA_PASSWORD` varible contains password for the kibana system user "kibana_system".
